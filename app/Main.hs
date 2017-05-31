@@ -73,7 +73,7 @@ data Type =
     TUnit
   | TIdent TypeId
   | TLam Type Type
-  | TUnbounded
+  -- | TUnbounded
   deriving (Show, Eq, Ord)
 
 data TypeEnv = TypeEnv Integer (Map Expr TypeId) (Map TypeId Type)
@@ -88,13 +88,12 @@ showType typ tenv@(TypeEnv _ _ idmap) = do { (s, _, _) <- showType' allStrings M
   where
     showType' :: [String] -> Map TypeId String -> Type -> Maybe (String, [String], Map TypeId String)
     showType' unused idents TUnit = Just ("1", unused, idents)
-    showType' (nextId : unused) idents (TIdent x) = do
-      xtyp <- Map.lookup x idmap
-      case xtyp of
-        TUnbounded -> case Map.lookup x idents of
-          Just s -> return (s, unused, idents)
+    showType' (nextId : unused) idents (TIdent x) =
+      case (Map.lookup x idmap) of
+        Nothing -> case (Map.lookup x idents) of
+          Just s -> return (s, nextId : unused, idents)
           Nothing -> return (nextId, unused, Map.insert x nextId idents)
-        otherwise -> showType' (nextId : unused) idents xtyp
+        Just typ -> showType' (nextId : unused) idents typ
     showType' unused idents (TLam a b) = do
       (sa, unused', idents') <- showType' unused idents a
       (sb, unused'', idents'') <- showType' unused' idents' b
@@ -138,7 +137,6 @@ containsTypeId TUnit _ = False
 containsTypeId (TIdent x) tid = (x == tid)
 containsTypeId (TLam a b) tid =
   containsTypeId a tid || containsTypeId b tid
-containsTypeId TUnbounded tid = False
 
 subtype :: TypeEnv -> Type -> Type -> Maybe TypeEnv
 subtype tenv a b | trace ("subtype " ++ (show a) ++ " <: " ++ (show b)) False = undefined
@@ -153,43 +151,43 @@ subtype tenv (TLam a1 b1) (TLam a2 b2) = do
   return tenv''
 
 subtype tenv@(TypeEnv n exprmap idmap) (TIdent u) b = do
-  ut <- Map.lookup u idmap
-  case ut of
+  case (Map.lookup u idmap) of
     -- <:InstantiateL and InstLSolve
-    TUnbounded -> if containsTypeId b u
+    Nothing -> if containsTypeId b u
       -- Attempt to instantiate a cyclical type reference
       then Nothing
       else return (updateIdType u b tenv)
-    otherwise -> subtype tenv ut b
+    Just utyp -> subtype tenv utyp b
 
 subtype tenv@(TypeEnv n exprmap idmap) a (TIdent u) = do
-  ut <- Map.lookup u idmap
-  case ut of
+  case (Map.lookup u idmap) of
     -- <:InstantiateR and InstRSolve
-    TUnbounded -> if containsTypeId a u
+    Nothing -> if containsTypeId a u
       -- Attempt to instantiate a cyclical type reference
       then Nothing
       else return (updateIdType u a tenv)
-    otherwise -> subtype tenv a ut
+    Just utyp -> subtype tenv a utyp
 
 subtype _ _ _ = Nothing
--- subtype tenv a TUnbounded = Just tenv
 
 synth :: TypeEnv -> Expr -> Maybe (Type, TypeEnv)
 synth tenv@(TypeEnv n exprmap idmap) expr | trace ("synth " ++ (show expr) ++ "\n  " ++ (show exprmap) ++ "\n  " ++ (show idmap)) False = undefined
 
--- Var
 synth tenv@(TypeEnv _ exprmap idmap) expr
   | Just tid <- Map.lookup expr exprmap
-  , Just typ <- Map.lookup tid idmap
-  = Just (typ, tenv)
+  = case (Map.lookup tid idmap) of
+      -- This TypeId is unbounded so far, so we produce a TIdent
+      Nothing -> Just (TIdent tid, tenv)
 
--- 1I=>
-synth tenv expr@(EUnit _) = Just (TUnit, addExprType expr TUnit tenv)
+      -- Var
+      Just typ -> Just (typ, tenv)
 
 -- All EIdent expressions should be handled by Var, otherwise it's an unbound
 -- identifier.
 synth _ expr@(EIdent _ _) = Nothing
+
+-- 1I=>
+synth tenv expr@(EUnit _) = Just (TUnit, addExprType expr TUnit tenv)
 
 -- synth tenv@(TypeEnv n exprmap idmap) expr@(EIdent _ x) = do
 --   tid <- Map.lookup expr exprmap
@@ -202,8 +200,7 @@ synth tenv@(TypeEnv n exprmap idmap) expr@(ELam _ x body) = do
   let xtid = TypeId n
   let idents = findIdents x body
   let exprmap' = foldl (\m e -> Map.insert e xtid m) exprmap idents
-  let idmap' = Map.insert xtid TUnbounded idmap
-  let tenv' = TypeEnv (n + 1) exprmap' idmap'
+  let tenv' = TypeEnv (n + 1) exprmap' idmap
 
   -- insert y
   (bodytyp, tenv'') <- synth tenv' body
@@ -222,13 +219,11 @@ synth tenv@(TypeEnv n exprmap idmap) expr@(EApp _ f a) = do
       return (y, tenv'')
 
     -- âApp
-    TUnbounded -> do
+    TIdent tid | Nothing <- Map.lookup tid idmap -> do
       -- Instantiate the function type
       let xtid = TypeId n'
       let ytid = TypeId (n' + 1)
-      let idmap'' = Map.insert xtid TUnbounded idmap'
-      let idmap''' = Map.insert ytid TUnbounded idmap''
-      let tenv'' = TypeEnv (n' + 2) exprmap' idmap'''
+      let tenv'' = TypeEnv (n' + 2) exprmap' idmap'
       let ftyp' = TLam (TIdent xtid) (TIdent ytid)
       let tenv''' = updateExprType f ftyp' tenv''
 
