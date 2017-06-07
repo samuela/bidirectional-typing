@@ -144,22 +144,15 @@ interp env (EApp _ f a) = case ((interp env f), (interp env a)) of
 run :: Expr -> Maybe Val
 run = interp Map.empty
 
--- TypeIds can cyclically reference each other so this is non-trivial
--- resolveTypeId :: TypeId -> TypeEnv -> Maybe Type
--- resolveTypeId = resolve []
---   where
---     resolve :: [TypeId] -> TypeId -> TypeEnv -> Maybe Type
---     resolve seen tid tenv@(TypeEnv _ _ idmap) = if tid `elem` seen
---       then Nothing
---       else case (Map.lookup tid idmap) of
---         Just (TIdent tid') -> resolve (tid:seen) tid' tenv
---         Just typ -> Just typ
---         otherwise -> Nothing
-
 allStrings = [c : s | s <- "" : allStrings, c <- ['a'..'z']]
 
-sanitizeTypeEnv :: TypeEnv -> TypeEnv
-sanitizeTypeEnv tenv@(TypeEnv n exprmap idmap) = TypeEnv n exprmap' idmap'
+-- Because TypeIds can cyclically reference each other, we need to reduce a
+-- TypeEnv to a non-cyclical form that is easy to work with and display. This
+-- function takes a TypeEnv and produces a mapping from previous TypeIds to a
+-- smaller set of new ones. This mapping is applied by the fixTypeEnv
+-- function below.
+compressTypeIds :: TypeEnv -> Map TypeId TypeId
+compressTypeIds tenv@(TypeEnv n exprmap idmap) = newIdsMap
   where
     newTypeId' :: [TypeId] -> TypeId -> TypeId
     newTypeId' seen tid = case (idmap ! tid) of
@@ -180,24 +173,33 @@ sanitizeTypeEnv tenv@(TypeEnv n exprmap idmap) = TypeEnv n exprmap' idmap'
     newIds = [newTypeId tid | tid <- allTids]
     newIdsMap = Map.fromList (zip allTids newIds)
 
+-- Functions to apply a TypeId mapping
+fixType :: Map TypeId TypeId -> Type -> Type
+fixType _ TUnit = TUnit
+fixType newIdsMap (TIdent tid) = TIdent (newIdsMap ! tid)
+fixType newIdsMap (TLam a b) = TLam (fixType newIdsMap a) (fixType newIdsMap b)
+
+fixTypeStatus :: Map TypeId TypeId -> TypeStatus -> TypeStatus
+fixTypeStatus _ Exists = Exists
+fixTypeStatus _ Forall = Forall
+fixTypeStatus newIdsMap (Typed typ) = Typed (fixType newIdsMap typ)
+
+fixTypeEnv :: Map TypeId TypeId -> TypeEnv -> TypeEnv
+fixTypeEnv newIdsMap tenv@(TypeEnv n exprmap idmap) = sanitized
+  where
     -- This lookup will only fail if the exprmap is corrupted
-    exprmap' = Map.fromList [(e, newIdsMap ! tid) | (e, tid) <- Map.toList exprmap]
+    exprmap' = Map.fromList [
+      (e, newIdsMap ! tid)
+      | (e, tid) <- Map.toList exprmap]
 
-    fixType :: Type -> Type
-    fixType TUnit = TUnit
-    fixType (TIdent tid) = TIdent (newIdsMap ! tid)
-    fixType (TLam a b) = TLam (fixType a) (fixType b)
+    idmap' = Map.fromList [
+      (tid, fixTypeStatus newIdsMap (idmap ! tid))
+      -- Intersect with the keys of idmap
+      | tid <- nub ((Map.keys newIdsMap) `intersect` (Map.keys idmap)),
+      -- Avoid the remaining (trivial) cycles!
+      (Typed (TIdent tid)) /= fixTypeStatus newIdsMap (idmap ! tid)]
 
-    fixTypeStatus :: TypeStatus -> TypeStatus
-    fixTypeStatus Exists = Exists
-    fixTypeStatus Forall = Forall
-    fixTypeStatus (Typed typ) = Typed (fixType typ)
-
-    idmap' = Map.fromList [(tid, fixTypeStatus (idmap ! tid))
-                            -- Intersect with the keys of idmap
-                            | tid <- nub (newIds `intersect` Map.keys idmap),
-                            -- Avoid the remaining (trivial) cycles!
-                            (Typed (TIdent tid)) /= fixTypeStatus (idmap ! tid)]
+    sanitized = TypeEnv n exprmap' idmap'
 
 showType :: Type -> TypeEnv -> Maybe String
 -- showType typ tenv@(TypeEnv _ _ idmap) | trace ("showType " ++ (show typ) ++ "\n  " ++ (show idmap)) False = undefined
@@ -387,10 +389,16 @@ check tenv expr typ = do
   tenv'' <- subtype tenv' typ' typ
   return tenv''
 
-typeInfer :: SimpleExpr -> Maybe String
+typeInfer :: SimpleExpr -> Maybe (Type, TypeEnv)
 typeInfer sexpr = do
   let sourceExpr = simpleToSource sexpr
   (expr, tenv) <- reduceAnnoTypes sourceExpr
   (typ, tenv') <- synth tenv expr
-  let sanitaryTenv = sanitizeTypeEnv tenv'
-  showType typ sanitaryTenv
+  let tidmap = compressTypeIds tenv'
+  let sanitaryTenv = fixTypeEnv tidmap tenv'
+  return (fixType tidmap typ, sanitaryTenv)
+
+typeInferStr :: SimpleExpr -> Maybe String
+typeInferStr sexpr = do
+  (typ, tenv) <- typeInfer sexpr
+  showType typ tenv
