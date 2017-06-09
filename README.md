@@ -1,1 +1,1 @@
-# bidi-types
+# bidi-typing
