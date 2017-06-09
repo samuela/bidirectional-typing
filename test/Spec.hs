@@ -1,11 +1,25 @@
 import Lib
+
+import qualified Data.Map as Map
 import Test.Hspec
 
 main :: IO ()
 main = hspec $ do
-  -- describe "synth" $ do
-  --   it "creates expr mappings for Unit" $ do
-  --
+  describe "synth" $ do
+    it "creates expr mappings for Unit" $ do
+      case (typeInfer Unit) of
+        Just (expr, typ, tenv@(TypeEnv n exprmap idmap)) ->
+          (Map.member expr exprmap) `shouldBe` True
+
+    it "creates expr mappings for annotated Unit" $ do
+      case (typeInfer (Anno Unit AUnit)) of
+        Just (expr, typ, tenv@(TypeEnv n exprmap idmap)) ->
+          (Map.member expr exprmap) `shouldBe` True
+
+    it "creates expr mappings for function application" $ do
+      case (typeInfer (App (Lam "x" Unit) Unit)) of
+        Just (expr, typ, tenv@(TypeEnv n exprmap idmap)) ->
+          (Map.member expr exprmap) `shouldBe` True
 
   describe "typeInferStr" $ do
     it "Unit => TUnit" $ do

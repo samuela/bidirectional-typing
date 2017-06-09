@@ -232,9 +232,9 @@ addExprType expr typ (TypeEnv n exprmap idmap) = TypeEnv n' exprmap' idmap'
     exprmap' = Map.insert expr (TypeId n) exprmap
     idmap' = Map.insert (TypeId n) (Typed typ) idmap
 
-createExistential :: TypeEnv -> (TypeId, TypeEnv)
-createExistential (TypeEnv n exprmap idmap) =
-  (TypeId n, TypeEnv (n + 1) exprmap (Map.insert (TypeId n) Exists idmap))
+-- createExistential :: TypeEnv -> (TypeId, TypeEnv)
+-- createExistential (TypeEnv n exprmap idmap) =
+--   (TypeId n, TypeEnv (n + 1) exprmap (Map.insert (TypeId n) Exists idmap))
 
 createForall :: TypeEnv -> (TypeId, TypeEnv)
 createForall (TypeEnv n exprmap idmap) =
@@ -334,7 +334,7 @@ synth _ expr@(EIdent _ _) = Nothing
 
 synth tenv expr@(EAnno _ body typ) = do
   tenv' <- check tenv body typ
-  return (typ, tenv')
+  return (typ, addExprType expr typ tenv')
 
 -- 1I=>
 synth tenv expr@(EUnit _) = Just (TUnit, addExprType expr TUnit tenv)
@@ -362,7 +362,7 @@ synth tenv@(TypeEnv n exprmap idmap) expr@(EApp _ f a) = do
     -- ->App
     TLam x y -> do
       tenv'' <- check tenv' a x
-      return (y, tenv'')
+      return (y, addExprType expr y tenv'')
 
     -- âApp
     TIdent tid | Exists <- idmap ! tid -> do
@@ -389,16 +389,16 @@ check tenv expr typ = do
   tenv'' <- subtype tenv' typ' typ
   return tenv''
 
-typeInfer :: SimpleExpr -> Maybe (Type, TypeEnv)
+typeInfer :: SimpleExpr -> Maybe (Expr, Type, TypeEnv)
 typeInfer sexpr = do
   let sourceExpr = simpleToSource sexpr
   (expr, tenv) <- reduceAnnoTypes sourceExpr
   (typ, tenv') <- synth tenv expr
   let tidmap = compressTypeIds tenv'
   let sanitaryTenv = fixTypeEnv tidmap tenv'
-  return (fixType tidmap typ, sanitaryTenv)
+  return (expr, fixType tidmap typ, sanitaryTenv)
 
 typeInferStr :: SimpleExpr -> Maybe String
 typeInferStr sexpr = do
-  (typ, tenv) <- typeInfer sexpr
+  (_, typ, tenv) <- typeInfer sexpr
   showType typ tenv
