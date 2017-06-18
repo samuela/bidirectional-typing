@@ -1,5 +1,10 @@
 # Homemade Bidirectional Typing
 
+```
+(λ f. (λ g. (λ x. f (g x))))
+=> ((a -> b) -> ((c -> a) -> (c -> b)))
+```
+
 A bidirectional type inference system loosely based on [Complete and Easy Bidirectional Typechecking
 for Higher-Rank Polymorphism]( https://www.cs.cmu.edu/~joshuad/papers/bidir/Dunfield13_bidir_submitted.pdf).
 
@@ -18,7 +23,7 @@ data Expr =
   | EApp Loc Expr Expr
 ```
 
-featuring a unit type. `Loc` here refers to a type which specifies source location of the expression. After all, two variables with the same name in different parts of the program are unique and need not have the same type.
+featuring a unit type which is simply a base type but without anything interesting that you can do with it. `Loc` here refers to a type which specifies source location of the expression. After all, two variables with the same name in different parts of the program are unique and need not have the same type.
 
 A corresponding interpreter is included as well,
 
@@ -42,11 +47,16 @@ run :: Expr -> Maybe Val
 run = interp Map.empty
 ```
 
-Not much to see here...
+Moving along...
 
 # Type Inference
 
-This is the fun part. Since I was starting with very few pre-conceived notions about what a bidirectional type inference algorithm should look like I ended up diverging from the "Complete and Easy" algorithm in a few ways. In particular, instead of maintaining a so-called "ordered algorithmic context" I simply maintained type environment that mapped source expressions to `TypeId`s which are then mapped to types:
+This is the fun part. Bidirectional typing is centered on two operations, hence the name.
+
+* Type **checking**, checking that an expression satisfies a given type under some context. For example, checking that `(λ x. x)` has type `a -> a` should succeed but checking it against the unit type should fail.
+* Type **synthesis**, given an expression and some program context synthesize a new type for the expression. We may not have enough information to determine the exact type that the expression must have, but we can make a guess and put in some placeholders where necessary. For example, we know `(λ x. <body>)` must have a function type `a -> b`, but we can't quite be sure about what `a` and `b` are without looking into the body of the lambda.
+
+Since I was starting with very few pre-conceived notions about what a bidirectional type inference algorithm should look like I ended up diverging from the "Complete and Easy" algorithm in a few ways. In particular, instead of maintaining a so-called "ordered algorithmic context" I simply maintained type environment that mapped source expressions to `TypeId`s which are then mapped to types:
 
 ```haskell
 newtype TypeId = TypeId Integer
@@ -78,7 +88,7 @@ check tenv expr typ = do
 
 I'm not sure if this is a good or bad thing really. I view it as a simplification, personally. (This is equivalent to the Sub rule in "Complete and Easy.")
 
-The rest of the implementation reflects the "Complete and Easy" algorithm fairly closely. We are just missing `subtype` and `synth`,
+The rest of the implementation actually reflects the "Complete and Easy" algorithm fairly closely. I also ended up with `subtype` and `synth`, but happened to inline the instantiation rules.
 
 ```haskell
 synth :: TypeEnv -> Expr -> Maybe (Type, TypeEnv)
@@ -90,7 +100,7 @@ These implementations are fairly routine. Function applications are a little tri
 
 All in all, I'm pretty happy with the way it turned out. In my (very partial) opinion, the implementation with an unordered mapping from expressions to types is more intuitive than thinking about an ordered context of solved and unsolved types. The implementation also doesn't require splicing a bunch of lists which is nice.
 
-I went back to read the paper and noted the connections between the two in code comments so it should be fairly approachable to readers that prefer looking at LaTeX.
+I went back to read the paper and noted the connections between the two in code comments so it should be fairly approachable to readers who prefer reading at LaTeX.
 
 # TODO
 * There are a number of things that could be made more monadic/clean. PRs welcome!
