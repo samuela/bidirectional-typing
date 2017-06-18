@@ -365,7 +365,7 @@ synth tenv@(TypeEnv n exprmap idmap) expr@(EApp _ f a) = do
       return (y, addExprType expr y tenv'')
 
     -- âApp
-    TIdent tid | Exists <- idmap ! tid -> do
+    TIdent tid | Exists <- idmap' ! tid -> do
       -- Instantiate the function type
       let xtid = TypeId n'
       let ytid = TypeId (n' + 1)
