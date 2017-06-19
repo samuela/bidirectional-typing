@@ -8,7 +8,7 @@
 A bidirectional type inference system loosely based on [Complete and Easy Bidirectional Typechecking
 for Higher-Rank Polymorphism]( https://www.cs.cmu.edu/~joshuad/papers/bidir/Dunfield13_bidir_submitted.pdf).
 
-I briefly read a bit about bidirectional type inference about a year ago but was fuzzy on many of the details, so I figured that it would be a fun exercise to try to implement a full type inference and checking algorithm without consulting any references. This is the result.
+I read a bit about bidirectional type inference about a year ago but was fuzzy on many of the details, so I figured that it would be a fun exercise to try to implement a full type inference and checking algorithm without consulting any references. This is the result.
 
 # Exposition
 
@@ -98,10 +98,10 @@ subtype :: TypeEnv -> Type -> Type -> Maybe TypeEnv
 
 These implementations are fairly routine. Function applications are a little tricky, but with those figured out the rest falls into place. Function subtyping also requires a little bit of care, of course. `A1 <: A2` and `B1 <: B2` does not imply `A1 -> B1 <: A2 -> B2`!
 
-All in all, I'm pretty happy with the way it turned out. In my (very partial) opinion, the implementation with an unordered mapping from expressions to types is more intuitive than thinking about an ordered context of solved and unsolved types. The implementation also doesn't require splicing a bunch of lists which is nice.
+All in all, I'm pretty happy with the way it turned out. In my (very partial) opinion, the implementation with an unordered mapping from expressions to types is more intuitive than thinking about an ordered context of solved and unsolved types. The implementation also doesn't require type markers or list splicing kung fu which is nice.
 
 I went back to read the paper and noted the connections between the two in code comments so it should be fairly approachable to readers who prefer reading at LaTeX.
 
 # TODO
 * There are a number of things that could be made more monadic/clean. PRs welcome!
-* Record subtyping is next on my list. As far as I can tell, this requires using a constraint solver approach, but is certainly do-able.
+* Record subtyping is next on my list. I spent a bit of time on this, but I've come to the conclusion that it requires using a constraint solver approach. Should be do-able though.
